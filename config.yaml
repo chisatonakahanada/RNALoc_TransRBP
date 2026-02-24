@@ -1,7 +1,7 @@
 # RNA data
 input_embeddings_dir: data/rna_embeddings
-input_path_train_list: data/damy.csv
-input_path_valid_list: data/damy.csv
+input_path_train_list: data/rna_loc/damy.csv
+input_path_valid_list: data/rna_loc/damy.csv
 
 # RBP data
 rbp_matrix_dir_eclip: data/rbp_matrix_eclip
@@ -49,5 +49,5 @@ species_list:
 
 
 # test
-input_path_test_list: data/all_80_test.csv
+input_path_test_list: data/rna_loc/damy.csv
 model_path: 
