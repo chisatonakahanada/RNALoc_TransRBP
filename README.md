@@ -14,6 +14,8 @@ https://drive.google.com/drive/folders/1ZOX8geocHbAbyK7ic47sOPfzjQ1jt7FH?usp=dri
 - RBP結合行列（eCLIP 実験データ）
 - RBP結合行列（Reformer による予測データ）
 
+## 設定
+config.yaml
 
-## 実行
-bash run.sh
+## 実行コマンド
+学習の実行：bash run.sh
