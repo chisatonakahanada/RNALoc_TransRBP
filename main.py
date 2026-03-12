@@ -15,8 +15,8 @@ from pandas.api.types import CategoricalDtype
 
 class FeatureVectorDataset(Dataset):
     def __init__(self, df, embeddings_dict, rbp_matrices_dict, config):
-        self.ids = df["ID"].tolist()  # Embeddings key : ID
-        self.refseq_ids = df["Refseq_id"].tolist()  # RBP matrix key : Refseq_id
+        self.ids = df["ID"].tolist()  
+        self.refseq_ids = df["Refseq_id"].tolist()  
 
         label_df = df.iloc[:, config["label_start_index"]:config["feature_start_index"]]
         label_numeric = label_df.apply(pd.to_numeric, errors='coerce')
@@ -77,98 +77,95 @@ def load_config(path):
 
 def load_embeddings_npy(directory, ids):
     embeddings = {}
-    for id_ in tqdm(ids, desc="Loading .npy embeddings", mininterval=10):
+    missing_ids = []
+    
+    for id_ in tqdm(ids, desc="Loading embeddings", mininterval=10):
         path = os.path.join(directory, f"{id_}.npy")
         if os.path.exists(path):
-            embeddings[id_] = np.load(path)
+            try:
+                embeddings[id_] = np.load(path)
+            except Exception:
+                missing_ids.append(id_)
         else:
-            raise FileNotFoundError(f"Embedding file not found: {path}")
-    return embeddings
-
-def load_rbp_matrices_csv(directory_eclip, directory_reformer, refseq_ids, id_to_refseq_map):
-    """CSVファイルから RBP 行列と ID 情報をロード
+            missing_ids.append(id_)
     
-    CSV 構造（新形式）:
-    - 行 0: ヘッダー (RBPの名前) - AARS_K562,AATF_K562,ABCF1_K562,...
-    - 行 1～配列長行まで: 各ポジションの 0/1 値 - 0,0,0,0,0,0,0,0,0,0,...
+    loaded = len(embeddings)
+    total = len(ids)
+    print(f"  Loaded: {loaded}/{total} ({100*loaded/total:.1f}%)")
+    
+    return embeddings, missing_ids
+
+def load_rbp_matrices_csv(directory, ids, key_name="", num_rbps=None):
+    """CSVファイルから RBP マトリックスと ID 情報をロード
     
     Args:
-        directory_eclip: ECLIP形式のRBP行列ファイルが格納されたディレクトリ
-                        ファイル名: {refseq_id}.csv
-        directory_reformer: Reformer形式のRBP行列ファイルが格納されたディレクトリ
-                           ファイル名: RNA_{id}.csv
-        refseq_ids: ロード対象のRefseq_idのリスト
-        id_to_refseq_map: {id: refseq_id} のマッピング（Reformerディレクトリ用）
+        directory: RBP行列ファイルが格納されたディレクトリ
+        ids: ロード対象のIDのリスト（Refseq_idまたはID）
+        key_name: ログ用のキー名（例: "eCLIP", "Reformer"）
+        num_rbps: RBPの数。150の場合、重複列を除外する
     
     Returns:
         tuple: (matrices_dict, ids_dict)
-            - matrices_dict: {refseq_id: rbp_matrix_array (seq_len, num_rbps) or None}
-            - ids_dict: {refseq_id: {"refseq_id": str, "length": int}}
+            - matrices_dict: {id: rbp_matrix_array (seq_len, num_rbps) or None}
+            - ids_dict: {id: {"refseq_id": str, "length": int}}
     """
+    if not os.path.exists(directory):
+        print(f"  Directory not found: {directory}")
+        return {}, {}
+    
     matrices = {}
     ids_info = {}
+    loaded_count = 0
     
-    for refseq_id in tqdm(refseq_ids, desc="Loading RBP matrices from CSV", mininterval=10):
-        matrices[refseq_id] = None
-        rbp_matrix = None
+    desc = f"Loading RBP ({key_name})" if key_name else "Loading RBP matrices"
+    for id_ in tqdm(ids, desc=desc, mininterval=10, disable=len(ids)==0):
+        matrices[id_] = None
+        path = os.path.join(directory, f"{id_}.csv")
         
-        # Step 1: directory_eclip で {refseq_id}.csv を探す
-        path_eclip = os.path.join(directory_eclip, f"{refseq_id}.csv")
-        if os.path.exists(path_eclip):
-            try:
-                df = pd.read_csv(path_eclip)
-                if len(df) > 0:
-                    # ヘッダーはRBP名（行0）、データは行1から
-                    rbp_matrix = df.iloc[1:, :].values.astype(np.float32)
-                    if rbp_matrix.size > 0:
-                        print(f"DEBUG: {refseq_id} - Loaded from eclip, shape={rbp_matrix.shape}")
-            except Exception as e:
-                print(f"Warning: Error loading RBP matrix from eclip {path_eclip}: {e}")
+        if not os.path.exists(path):
+            continue
         
-        # Step 2: eclip でロード失敗の場合、directory_reformer で {id}.csv を探す
-        if rbp_matrix is None:
-            # refseq_id に対応する id を探す
-            corresponding_id = None
-            for id_, rid in id_to_refseq_map.items():
-                if rid == refseq_id:
-                    corresponding_id = id_
-                    break
+        try:
+            df = pd.read_csv(path)
+            if len(df) == 0:
+                continue
             
-            if corresponding_id is not None:
-                possible_names = [f"{corresponding_id}.csv"]
+            # num_rbps が 150 の場合、重複する列（前半が一致するもの）を除外
+            if num_rbps == 150:
+                columns = df.columns.tolist()
+                # RBP名（_より前）でグルーピング
+                rbp_groups = {}
+                for col in columns:
+                    rbp_name = col.split('_')[0]  # AARS, AATF, ABCF1, AGGF1 など
+                    if rbp_name not in rbp_groups:
+                        rbp_groups[rbp_name] = []
+                    rbp_groups[rbp_name].append(col)
                 
-                for filename in possible_names:
-                    path_reformer = os.path.join(directory_reformer, filename)
-                    if os.path.exists(path_reformer):
-                        try:
-                            df = pd.read_csv(path_reformer)
-                            if len(df) > 0:
-                                # 行0はヘッダー(RBP名)、データは行1から
-                                rbp_matrix = df.iloc[1:, :].values.astype(np.float32)
-                                if rbp_matrix.size > 0:
-                                    print(f"DEBUG: {refseq_id} - Loaded from reformer using '{filename}', shape={rbp_matrix.shape}")
-                                    break
-                        except Exception as e:
-                            print(f"Warning: Error loading RBP matrix from reformer {path_reformer}: {e}")
-        
-        # Step 3: いずれかから正常にロードできた場合、matrices に保存
-        if rbp_matrix is not None and rbp_matrix.size > 0:
-            seq_len = rbp_matrix.shape[0]
-            num_rbps = rbp_matrix.shape[1]
+                # 各グループでアルファベット順に最初のものを選択
+                selected_columns = []
+                for rbp_name in sorted(rbp_groups.keys()):
+                    sorted_cols = sorted(rbp_groups[rbp_name])
+                    selected_columns.append(sorted_cols[0])  # 最初のものを選択
+                
+                # 選択された列のみを抽出
+                df = df[selected_columns]
             
-            # ID 情報を保存
-            ids_info[refseq_id] = {
-                "refseq_id": str(refseq_id),
-                "length": int(seq_len)
-            }
+            rbp_matrix = df.values.astype(np.float32)
+            if rbp_matrix.size == 0:
+                continue
             
-            matrices[refseq_id] = rbp_matrix
-        else:
-            # どちらからもロード失敗した場合は None のまま（RNA配列からのみの予測）
-            print(f"DEBUG: {refseq_id} - No RBP data available in either directory")
+            seq_len, num_rbps_actual = rbp_matrix.shape
+            ids_info[id_] = {"refseq_id": str(id_), "length": int(seq_len)}
+            matrices[id_] = rbp_matrix
+            loaded_count += 1
+            
+        except Exception:
+            continue
+    
+    if len(ids) > 0:
+        print(f"  Loaded: {loaded_count}/{len(ids)} ({100*loaded_count/len(ids):.1f}%)")
     
     return matrices, ids_info
-
 
 def collate_fn_with_none_rbp(batch):
     """None を含む RBP tensor を処理するカスタム collate 関数
@@ -209,15 +206,20 @@ def collate_fn_with_none_rbp(batch):
 
 
 def get_dataloaders(df_train, df_valid, embedding_dir, rbp_matrices, config):
-    # ID をキーとして embeddings をロード（元のまま）
+    print(f"\n=== Creating DataLoaders ===")
+    
+    # ID をキーとして embeddings をロード
     train_ids = df_train["ID"].tolist()
     valid_ids = df_valid["ID"].tolist()
-    
-    # train_ids = df_train["Refseq_id"].tolist()
-    # valid_ids = df_valid["Refseq_id"].tolist()
 
-    train_embeddings = load_embeddings_npy(embedding_dir, train_ids)
-    valid_embeddings = load_embeddings_npy(embedding_dir, valid_ids)
+    print("Loading train embeddings...")
+    train_embeddings, train_missing = load_embeddings_npy(embedding_dir, train_ids)
+    print("Loading valid embeddings...")
+    valid_embeddings, valid_missing = load_embeddings_npy(embedding_dir, valid_ids)
+
+    # 見つかった ID のみでフィルタリング
+    df_train = df_train[df_train["ID"].isin(train_embeddings.keys())]
+    df_valid = df_valid[df_valid["ID"].isin(valid_embeddings.keys())]
 
     train_dataset = FeatureVectorDataset(df_train, train_embeddings, rbp_matrices, config)
     val_dataset = FeatureVectorDataset(df_valid, valid_embeddings, rbp_matrices, config)
@@ -225,6 +227,8 @@ def get_dataloaders(df_train, df_valid, embedding_dir, rbp_matrices, config):
     train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True, collate_fn=collate_fn_with_none_rbp)
     val_loader = DataLoader(val_dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=collate_fn_with_none_rbp)
 
+    print(f"Batches: Train={len(train_loader)}, Valid={len(val_loader)}, Batch size={config['batch_size']}\n")
+    
     return train_loader, val_loader
 
 
@@ -394,7 +398,7 @@ def validate(model, loader, device, epoch, writer, config):
     all_preds = torch.cat(all_preds)
     all_labels = torch.cat(all_labels)
     tp = ((all_preds == 1) & (all_labels == 1)).sum().item()
-    fp = ((all_preds == 1) & (all_preds == 1) & (all_labels == 0)).sum().item()
+    fp = ((all_preds == 1) & (all_labels == 0)).sum().item()
     fn = ((all_preds == 0) & (all_labels == 1)).sum().item()
     micro_precision = tp / (tp + fp + 1e-8)
     micro_recall = tp / (tp + fn + 1e-8)
@@ -434,59 +438,140 @@ def main(log_dir):
     for i in range(torch.cuda.device_count()):
         print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
 
+    print("\n=== Loading Data Files ===")
     df_train = pd.read_csv(config["input_path_train_list"])
     df_valid = pd.read_csv(config["input_path_valid_list"])
+    
     embeddings_dir = config["input_embeddings_dir"]
-
     label_cols = df_train.iloc[:, config["label_start_index"]:config["feature_start_index"]].columns
 
     df_train = df_train.dropna(subset=label_cols)
     df_valid = df_valid.dropna(subset=label_cols)
 
     # RNA_Type フィルタリング
+    print(f"\n=== RNA Type Filtering ===")
     rna_type_filter = config.get("rna_type_filter", "ALL")
+    print(f"Filter: {rna_type_filter}")
     if rna_type_filter != "ALL":
         if rna_type_filter not in config["rna_type_list"]:
             raise ValueError(
                 f"Invalid rna_type_filter '{rna_type_filter}'. "
                 f"Expected one of {config['rna_type_list']} or 'ALL'."
             )
+        df_train_before_filter = len(df_train)
+        df_valid_before_filter = len(df_valid)
         df_train = df_train[df_train["RNA_Type"] == rna_type_filter]
         df_valid = df_valid[df_valid["RNA_Type"] == rna_type_filter]
-        print(f"Filtered by RNA_Type='{rna_type_filter}': train={len(df_train)}, valid={len(df_valid)}")
+        print(f"After filtering by RNA_Type='{rna_type_filter}':")
+        print(f"  Train: {df_train_before_filter} → {len(df_train)} (filtered: {df_train_before_filter - len(df_train)})")
+        print(f"  Valid: {df_valid_before_filter} → {len(df_valid)} (filtered: {df_valid_before_filter - len(df_valid)})")
+    else:
+        print(f"No RNA_Type filtering applied")
 
-    # RBP 行列をロード（Refseq_id をキーとして使用）
+    # RBP 行列をロード
+    print(f"\n=== Loading RBP Matrices ===")
+    
+    # Refseq_id と ID のマッピングを作成
+    train_refseq_to_id = dict(zip(df_train["Refseq_id"], df_train["ID"]))
+    valid_refseq_to_id = dict(zip(df_valid["Refseq_id"], df_valid["ID"]))
+    
     train_refseq_ids = df_train["Refseq_id"].tolist()
     valid_refseq_ids = df_valid["Refseq_id"].tolist()
-    all_refseq_ids = list(set(train_refseq_ids + valid_refseq_ids))
     
-    # ID → Refseq_id のマッピングを作成（Reformerディレクトリ用）
-    id_to_refseq_map = {}
-    for _, row in df_train.iterrows():
-        id_to_refseq_map[row["ID"]] = row["Refseq_id"]
-    for _, row in df_valid.iterrows():
-        id_to_refseq_map[row["ID"]] = row["Refseq_id"]
-    
-    rbp_matrices, rbp_ids_info = load_rbp_matrices_csv(
+    # Train用: eCLIP (Refseq_id) → Reformer (ID) の順でロード
+    print("Train: Loading eCLIP (key=Refseq_id)...")
+    train_rbp_matrices_eclip, train_rbp_ids_info_eclip = load_rbp_matrices_csv(
         config["rbp_matrix_dir_eclip"],
-        config["rbp_matrix_dir_reformer"],
-        all_refseq_ids,
-        id_to_refseq_map
+        train_refseq_ids,
+        "eCLIP",
+        num_rbps=config.get("num_rbps")
     )
+    
+    # eCLIPで見つからなかったもののIDを取得
+    train_missing_refseq = [rid for rid in train_refseq_ids 
+                            if rid not in train_rbp_matrices_eclip or train_rbp_matrices_eclip[rid] is None]
+    train_missing_ids = [train_refseq_to_id[rid] for rid in train_missing_refseq if rid in train_refseq_to_id]
+    
+    # eCLIPで見つからなかったものをReformer (ID) から取得
+    print(f"Train: Loading Reformer (key=ID) for {len(train_missing_ids)} missing samples...")
+    train_rbp_matrices_reformer_by_id, train_rbp_ids_info_reformer_by_id = load_rbp_matrices_csv(
+        config["rbp_matrix_dir_reformer"],
+        train_missing_ids,
+        "Reformer",
+        num_rbps=config.get("num_rbps")
+    )
+    
+    # IDからRefseq_idへのマッピングを作成
+    train_id_to_refseq = {v: k for k, v in train_refseq_to_id.items()}
+    
+    # Reformerの結果をRefseq_idキーに変換
+    train_rbp_matrices_reformer = {}
+    train_rbp_ids_info_reformer = {}
+    for id_, matrix in train_rbp_matrices_reformer_by_id.items():
+        if id_ in train_id_to_refseq:
+            refseq_id = train_id_to_refseq[id_]
+            train_rbp_matrices_reformer[refseq_id] = matrix
+            if id_ in train_rbp_ids_info_reformer_by_id:
+                train_rbp_ids_info_reformer[refseq_id] = train_rbp_ids_info_reformer_by_id[id_]
+    
+    # Train用のマトリックスをマージ（eCLIP優先、キーはRefseq_id）
+    train_rbp_matrices = {}
+    train_rbp_ids_info = {}
+    for rid in train_refseq_ids:
+        if rid in train_rbp_matrices_eclip and train_rbp_matrices_eclip[rid] is not None:
+            train_rbp_matrices[rid] = train_rbp_matrices_eclip[rid]
+            train_rbp_ids_info[rid] = train_rbp_ids_info_eclip[rid]
+        elif rid in train_rbp_matrices_reformer and train_rbp_matrices_reformer[rid] is not None:
+            train_rbp_matrices[rid] = train_rbp_matrices_reformer[rid]
+            train_rbp_ids_info[rid] = train_rbp_ids_info_reformer[rid]
+        else:
+            train_rbp_matrices[rid] = None
+    
+    # Valid用: Reformer (ID) からのみロード
+    valid_ids = df_valid["ID"].tolist()
+    print(f"Valid: Loading Reformer (key=ID)...")
+    valid_rbp_matrices_by_id, valid_rbp_ids_info_by_id = load_rbp_matrices_csv(
+        config["rbp_matrix_dir_reformer"],
+        valid_ids,
+        "Reformer",
+        num_rbps=config.get("num_rbps")
+    )
+    
+    # ValidのIDからRefseq_idへのマッピング
+    valid_id_to_refseq = {v: k for k, v in valid_refseq_to_id.items()}
+    
+    # ValidのReformer結果をRefseq_idキーに変換
+    valid_rbp_matrices = {}
+    valid_rbp_ids_info = {}
+    for id_, matrix in valid_rbp_matrices_by_id.items():
+        if id_ in valid_id_to_refseq:
+            refseq_id = valid_id_to_refseq[id_]
+            valid_rbp_matrices[refseq_id] = matrix
+            if id_ in valid_rbp_ids_info_by_id:
+                valid_rbp_ids_info[refseq_id] = valid_rbp_ids_info_by_id[id_]
+    
+    # 全体のRBPマトリックスを統合（キーはRefseq_id）
+    rbp_matrices = {**train_rbp_matrices, **valid_rbp_matrices}
+    rbp_ids_info = {**train_rbp_ids_info, **valid_rbp_ids_info}
+
+    # 統計表示
+    train_from_eclip = [rid for rid in train_refseq_ids 
+                        if rid in train_rbp_matrices_eclip and train_rbp_matrices_eclip[rid] is not None]
+    train_from_reformer = [rid for rid in train_refseq_ids 
+                           if rid not in train_from_eclip and rid in train_rbp_matrices_reformer 
+                           and train_rbp_matrices_reformer[rid] is not None]
+    train_with_data = len(train_from_eclip) + len(train_from_reformer)
+    valid_with_data = len([rid for rid in valid_refseq_ids if rid in valid_rbp_matrices and valid_rbp_matrices[rid] is not None])
+    
+    print(f"\nRBP Statistics:")
+    print(f"  Train: {train_with_data}/{len(train_refseq_ids)} ({100*train_with_data/len(train_refseq_ids):.1f}%) - eCLIP:{len(train_from_eclip)}, Reformer:{len(train_from_reformer)}")
+    print(f"  Valid: {valid_with_data}/{len(valid_refseq_ids)} ({100*valid_with_data/len(valid_refseq_ids):.1f}%)\n")
 
     train_loader, val_loader = get_dataloaders(df_train, df_valid, embeddings_dir, rbp_matrices, config)
-    print("Got dataloaders.")
-    print()
-    
-    train_found_csv = [rid for rid in train_refseq_ids if rid in rbp_ids_info]
-    valid_found_csv = [rid for rid in valid_refseq_ids if rid in rbp_ids_info]
-    train_with_data = [rid for rid in train_refseq_ids if rid in rbp_matrices and rbp_matrices[rid] is not None]
-    valid_with_data = [rid for rid in valid_refseq_ids if rid in rbp_matrices and rbp_matrices[rid] is not None]
-    print("=== データ詳細 ===")
-    print(f"Train: {len(train_refseq_ids)} refseq_ids in list, {len(train_found_csv)} CSV files found, {len(train_with_data)} with matrix data")
-    print(f"Valid: {len(valid_refseq_ids)} refseq_ids in list, {len(valid_found_csv)} CSV files found, {len(valid_with_data)} with matrix data")
 
+    print("=== Model Initialization ===")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Device: {device}")
 
     model = TransformerEncoder(
         config=config,
@@ -495,6 +580,11 @@ def main(log_dir):
         rbp_dim=config["num_rbps"],
     )
     model = model.to(device)
+    
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Total parameters: {total_params:,}")
+    print(f"Trainable parameters: {trainable_params:,}")
 
     if torch.cuda.device_count() > 1:
         print(f"Using {torch.cuda.device_count()} GPUs with DataParallel")
@@ -504,6 +594,7 @@ def main(log_dir):
         print(f"Warning: Batch size ({config['batch_size']}) is not divisible by GPU count ({torch.cuda.device_count()})")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"])
+    print(f"Optimizer: Adam (lr={config['lr']})")
 
     os.makedirs(log_dir, exist_ok=True)
     checkpoint_dir = os.path.join(log_dir, "checkpoints")
@@ -511,6 +602,14 @@ def main(log_dir):
 
     train_log_path = os.path.join(log_dir, "train_log.csv")
     val_log_path = os.path.join(log_dir, "val_log.csv")
+
+    print(f"\n=== Training Configuration ===")
+    print(f"Log directory: {log_dir}")
+    print(f"Max epochs: {config['max_epochs']}")
+    print(f"Model save interval: {config['model_save_interval']}")
+    print(f"\n{'='*60}")
+    print("Starting training...")
+    print(f"{'='*60}\n")
 
     for epoch in range(config["max_epochs"]):
         with open(train_log_path, 'a', newline='') as f_train, open(val_log_path, 'a', newline='') as f_val:
