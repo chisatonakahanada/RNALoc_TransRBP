@@ -5,6 +5,8 @@ This repository implements a Transformer-based model for predicting the intracel
 Data and pre-trained model weights can be downloaded from the following link.
 https://drive.google.com/drive/folders/1ZOX8geocHbAbyK7ic47sOPfzjQ1jt7FH?usp=sharing
 
+## Quick Start
+
 ## Data
 https://drive.google.com/drive/folders/1zNymyjfZVhROodZz1M75lk51AzXEolkd?usp=drive_link
 
