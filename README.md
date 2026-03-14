@@ -15,7 +15,18 @@ The data used for training and evaluation can be downloaded from the following l
 
 ```bash
 https://drive.google.com/drive/folders/1zNymyjfZVhROodZz1M75lk51AzXEolkd?usp=drive_link
-```   
+```
+### RNA sequences and localizations
+
+
+### RBP binding sites
+
+- **rbp_matrix_eclip.zip**  
+  Unzip the file and save the data in `data/rbp_matrix_eclip`.
+
+- **rbp_matrix_reformer.zip**  
+  Unzip the file and save the data in `data/rbp_matrix_reformer`.
+
    
 ### 3. Download model weights
 The model weights used can be downloaded from the following link.
