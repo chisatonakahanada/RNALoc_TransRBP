@@ -43,18 +43,12 @@ The model weights used can be downloaded from the following link.
 https://drive.google.com/drive/folders/1pfKXi3r1E5GiL2yzF2vqjQC4mdSZ3rbb?usp=drive_link
 ```   
 
-## Data
-https://drive.google.com/drive/folders/1zNymyjfZVhROodZz1M75lk51AzXEolkd?usp=drive_link
+## Prediction
 
-### 内容
+## Training
 
-- RNA局在データ（train / valid / test）
-- RNA配列のRNAErnieによる embedding
-- RBP結合行列（eCLIP 実験データ）
-- RBP結合行列（Reformer による予測データ）
 
 ## 設定
 config.yaml
 
-## 実行コマンド
-学習の実行：bash run.sh
+
