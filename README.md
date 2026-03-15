@@ -45,6 +45,15 @@ https://drive.google.com/drive/folders/1pfKXi3r1E5GiL2yzF2vqjQC4mdSZ3rbb?usp=dri
 
 ## Prediction
 
+### 1. Specifying test data and model weights  
+Specify the test data and model weights in 'config.yaml'.  
+
+- input_path_test_list: Specify the path to the test data
+
+- rna_type_filter: Specify the RNA type to use
+
+- model_path: Specify the path to the model weights
+
 ## Training
 
 
