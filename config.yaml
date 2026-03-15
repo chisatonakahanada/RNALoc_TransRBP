@@ -37,9 +37,6 @@ rna_type_list:
   - mRNA
   - miRNA
 
-# rna_type_filter: ALL | lncRNA | mRNA | miRNA
-rna_type_filter: ALL
-
 species_list:
   - Homo sapiens
   # - Human
@@ -47,6 +44,8 @@ species_list:
   - Rattus norvegicus
   - Saccharomyces cerevisiae
 
+# rna_type_filter: ALL | lncRNA | mRNA | miRNA
+rna_type_filter: ALL
 
 # test
 input_path_test_list: data/rna_loc/rna_40_test.csv
