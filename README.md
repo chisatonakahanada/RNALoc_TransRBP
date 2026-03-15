@@ -9,8 +9,8 @@ https://drive.google.com/drive/folders/1ZOX8geocHbAbyK7ic47sOPfzjQ1jt7FH?usp=sha
 
 ### 1. Setup
 ```bash
-git clone https://github.com/chisatonakahanada/Transformer_RBP.git
-cd Transformer_RBP
+git clone https://github.com/chisatonakahanada/RNALoc_TransRBP.git
+cd RNALoc_TransRBP
 ```
 
 ### 2. Download Data
