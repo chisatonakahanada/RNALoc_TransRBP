@@ -1,4 +1,4 @@
-# Transformer_RBP
+# RNALoc_TransRBP
 
 This repository implements a Transformer-based model for predicting the intracellular localization of RNA using RNA sequence and RBP binding site information.
 
