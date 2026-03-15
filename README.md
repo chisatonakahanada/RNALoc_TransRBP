@@ -60,7 +60,5 @@ The inference results are output to 'result/'
 ## Training
 
 
-## 設定
-config.yaml
 
 
