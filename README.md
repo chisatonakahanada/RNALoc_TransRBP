@@ -51,6 +51,12 @@ Specify the test data and model weights in 'config.yaml'.
 - **rna_type_filter**: Specify the RNA type to use
 - **model_path**: Specify the path to the model weights
 
+### 2. Run inference
+```bash
+python test.py --output-dir-name [dir_name]
+```
+The inference results are output to 'result/'
+
 ## Training
 
 
